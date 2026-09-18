@@ -1,0 +1,3 @@
+add_executable(fg_example_evaluate evaluate.cpp)
+target_link_libraries(fg_example_evaluate PRIVATE FairnessGovernor::fairness_governor)
+fg_apply_strict_warnings(fg_example_evaluate)

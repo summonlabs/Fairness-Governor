@@ -1,0 +1,42 @@
+# Build trees
+/build/
+/build-*/
+/out/
+/install/
+.cmake/
+CMakeUserPresets.json
+
+# Compiler and tool output
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.gcda
+*.gcno
+*.gcov
+
+# Test and crash debris
+*.log
+*.tmp
+*.bak
+*.jnl
+*.prev
+fg-store/
+fg-test-tmp/
+crash-*.dmp
+
+# Editor and OS noise
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,3 @@
+add_executable(fg_bench fg_bench.cpp)
+target_link_libraries(fg_bench PRIVATE FairnessGovernor::fairness_governor)
+fg_apply_strict_warnings(fg_bench)

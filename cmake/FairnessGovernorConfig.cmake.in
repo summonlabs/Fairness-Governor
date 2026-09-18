@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+if(WIN32)
+  find_package(Threads REQUIRED)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/FairnessGovernorTargets.cmake")
+
+check_required_components(FairnessGovernor)
+
+set(FairnessGovernor_VERSION "@PROJECT_VERSION@")
+set(FairnessGovernor_ABI_VERSION "1")
