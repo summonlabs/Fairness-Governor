@@ -246,11 +246,30 @@ Status write_file(const std::string& path, const ByteBuffer& data) {
 
 Status replace_file(const std::string& from, const std::string& to) {
 #ifdef _WIN32
-  if (!MoveFileExW(widen(from).c_str(), widen(to).c_str(),
-                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-    return last_error_status("MoveFileEx");
+  // While a reader has the target open (an inspection, an antivirus or
+  // indexing scan) the replacement fails until the reader closes the file, so
+  // it is retried for a bounded time (about 2 s) instead of failing the write.
+  // A directory in the way is not transient and fails at once.
+  const std::wstring source = widen(from);
+  const std::wstring target = widen(to);
+  for (int attempt = 0;; ++attempt) {
+    if (MoveFileExW(source.c_str(), target.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+      return Status::success();
+    }
+    const DWORD code = GetLastError();
+    const DWORD attributes = GetFileAttributesW(target.c_str());
+    const bool directory =
+        attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    const bool transient = (code == ERROR_ACCESS_DENIED || code == ERROR_SHARING_VIOLATION ||
+                            code == ERROR_LOCK_VIOLATION) &&
+                           !directory;
+    if (!transient || attempt >= 100) {
+      SetLastError(code);
+      return last_error_status("MoveFileEx");
+    }
+    Sleep(20);
   }
-  return Status::success();
 #else
   if (::rename(from.c_str(), to.c_str()) != 0) {
     return Status(StatusCode::IoError, "rename failed");

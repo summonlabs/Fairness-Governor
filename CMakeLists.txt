@@ -77,8 +77,10 @@ endfunction()
 
 if(FG_ENABLE_ASAN)
   if(MSVC)
-    add_compile_options(/fsanitize=address)
-    add_link_options(/fsanitize=address)
+    # Debug information is required: without it MSVC warns C5072, which /WX
+    # turns into an error, so the sanitized build did not compile.
+    add_compile_options(/fsanitize=address /Zi)
+    add_link_options(/fsanitize=address /INCREMENTAL:NO /DEBUG)
     add_compile_definitions(FG_ASAN_ENABLED=1)
   else()
     add_compile_options(-fsanitize=address -fno-omit-frame-pointer)

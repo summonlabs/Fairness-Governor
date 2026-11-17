@@ -1,8 +1,11 @@
 // Fairness Governor - durable failure injection.
 // Copyright 2026 Summon Software Labs.
 // SPDX-License-Identifier: Apache-2.0
+#include <chrono>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "fairness_governor/persist/fsutil.hpp"
 #include "fairness_governor/persist/store.hpp"
@@ -196,5 +199,56 @@ FG_TEST(failure_injection, a_commit_that_fails_does_not_advance_in_memory_state)
   FG_CHECK_EQ(governor->accounting_generation(), generation);
   FG_CHECK_EQ(governor->last_committed_window().value(), window.value());
   FG_CHECK_OK(governor->shutdown());
+  remove_directory(directory);
+}
+
+FG_TEST(failure_injection, a_commit_waits_for_a_reader_to_close) {
+  FairnessPolicy policy = flat_policy(2);
+  const std::string directory = make_temp_directory("fault-reader");
+  {
+    Result<std::unique_ptr<FairnessGovernor>> opened =
+        FairnessGovernor::open(durable_config(policy, directory));
+    FG_CHECK_OK(opened.status());
+    if (!opened.ok()) {
+      return;
+    }
+    std::unique_ptr<FairnessGovernor>& governor = opened.value();
+    EvidenceSnapshot evidence = make_evidence(500, 1);
+    observe(evidence, 1, 1, 100);
+    observe(evidence, 2, 1, 900);
+    FG_CHECK_OK(governor->ingest_evidence(evidence).status());
+    Result<FairnessDecision> decision = governor->evaluate(make_request(policy, evidence));
+    FG_CHECK_OK(decision.status());
+    FG_CHECK_OK(governor->commit(decision.value()));
+    FG_CHECK_OK(governor->shutdown());
+  }
+
+  Result<DurableStore> store = DurableStore::open(directory);
+  FG_CHECK_OK(store.status());
+  if (!store.ok()) {
+    return;
+  }
+  DurableStore& durable = store.value();
+  const Incarnation writer{BootId::from_value(0x1234), 1};
+  const std::string path = durable.record_path(RecordKind::Accounting);
+  const ByteBuffer payload = fsutil::read_file(path, kMaxDurablePayloadBytes).value();
+  bool reader_opened = false;
+  bool committed = false;
+  {
+    // Another tool reading the store (an inspection, a scan) holds the record
+    // open while the next commit replaces it, and closes it shortly after.
+    std::ifstream reader(path, std::ios::binary);
+    reader_opened = reader.is_open();
+    std::thread committer([&durable, &payload, &writer, &committed] {
+      committed = durable.commit(RecordKind::Accounting, 1, 2, payload, writer).ok();
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    reader.close();
+    committer.join();
+  }
+  FG_CHECK(reader_opened);
+  // The commit is not refused because a reader had the record open for a moment.
+  FG_CHECK(committed);
+  FG_CHECK_EQ(durable.load(RecordKind::Accounting).generation, 2u);
   remove_directory(directory);
 }

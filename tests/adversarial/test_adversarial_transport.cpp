@@ -390,3 +390,26 @@ FG_TEST(adversarial_transport, the_connection_budget_is_enforced) {
   fixture->stop();
   (void)fixture->governor->shutdown();
 }
+
+FG_TEST(adversarial_transport, a_second_server_cannot_take_a_listening_port) {
+  const FairnessPolicy policy = flat_policy(2);
+  Result<std::unique_ptr<FairnessGovernor>> opened = FairnessGovernor::open_in_memory(policy);
+  FG_CHECK_OK(opened.status());
+  if (!opened.ok()) {
+    return;
+  }
+  std::unique_ptr<FairnessGovernor> governor = opened.take();
+  LinkServerOptions options;
+  options.port = 0;
+  Result<std::unique_ptr<EvidenceLinkServer>> first = EvidenceLinkServer::start(*governor, options);
+  FG_CHECK_OK(first.status());
+  if (!first.ok()) {
+    return;
+  }
+  LinkServerOptions same = options;
+  same.port = first.value()->port();
+  Result<std::unique_ptr<EvidenceLinkServer>> second = EvidenceLinkServer::start(*governor, same);
+  // Two coordinators must never share one listening port: the second start fails.
+  FG_CHECK(!second.ok());
+  (void)governor->shutdown();
+}
